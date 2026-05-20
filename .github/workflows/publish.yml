@@ -1,0 +1,64 @@
+name: Publish Extension
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Package (universal)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx vsce package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: '*.vsix'
+
+  upload-release-assets:
+    name: Upload Release Assets
+    needs: package
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+      - name: Upload VSIX to release
+        run: gh release upload "${{ github.event.release.tag_name }}" *.vsix --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+
+  publish:
+    name: Publish to Marketplace
+    needs: package
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - run: npx @vscode/vsce publish --packagePath *.vsix
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      - name: Publish to Open VSX
+        run: |
+          for vsix in *.vsix; do
+            npx ovsx publish "$vsix" -p "$OVSX_PAT" --skip-duplicate
+          done
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}

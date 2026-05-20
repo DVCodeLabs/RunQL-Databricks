@@ -1,0 +1,61 @@
+{
+  "name": "runql-databricks",
+  "displayName": "RunQL Databricks Connector",
+  "description": "Optional Databricks connector for RunQL.",
+  "publisher": "runql",
+  "icon": "media/icon.png",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DVCodeLabs/RunQL-Databricks.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DVCodeLabs/RunQL-Databricks/issues"
+  },
+  "homepage": "https://runql.com/opensource/",
+  "keywords": [
+    "vscode",
+    "vscode-extension",
+    "sql",
+    "databricks",
+    "lakehouse",
+    "database",
+    "runql"
+  ],
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Data Science",
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionDependencies": [
+    "RunQL-VSCode-Extension.runql"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {},
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "node esbuild.js --production"
+  },
+  "devDependencies": {
+    "@types/lz4": "^0.6.4",
+    "@types/node": "20.x",
+    "@types/node-fetch": "^2.6.13",
+    "@types/node-int64": "^0.4.32",
+    "@types/thrift": "^0.10.17",
+    "@types/vscode": "^1.96.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@databricks/sql": "^1.14.0"
+  }
+}
