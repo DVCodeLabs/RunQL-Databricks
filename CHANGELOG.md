@@ -16,3 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 - Fixed project icon.
+
+## [1.1.0]
+
+### Changed
+- Changed introspection of schemas

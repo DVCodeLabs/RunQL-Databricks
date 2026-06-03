@@ -428,6 +428,10 @@ export class DatabricksAdapter implements DbAdapter {
     profile: ConnectionProfile,
     catalogName: string
   ): Promise<void> {
+    const requestedSchema = profile.schema?.trim();
+    const primaryKeySchemaFilter = requestedSchema ? `AND kcu.table_schema = ${quoteLiteral(requestedSchema)}` : '';
+    const foreignKeySchemaFilter = requestedSchema ? `AND fk.table_schema = ${quoteLiteral(requestedSchema)}` : '';
+
     const primaryKeyRows = await this.queryInformationSchema(session, profile, `
       SELECT
         kcu.table_catalog,
@@ -440,6 +444,7 @@ export class DatabricksAdapter implements DbAdapter {
        AND kcu.constraint_schema = tc.constraint_schema
        AND kcu.constraint_name = tc.constraint_name
       WHERE tc.constraint_type = 'PRIMARY KEY'
+        ${primaryKeySchemaFilter}
       ORDER BY kcu.table_schema, kcu.table_name, kcu.ordinal_position
     `);
 
@@ -485,6 +490,7 @@ export class DatabricksAdapter implements DbAdapter {
        AND pk.constraint_name = rc.unique_constraint_name
        AND pk.ordinal_position = fk.position_in_unique_constraint
       WHERE tc.constraint_type = 'FOREIGN KEY'
+        ${foreignKeySchemaFilter}
       ORDER BY fk.table_schema, fk.table_name, tc.constraint_name, fk.ordinal_position
     `);
 
