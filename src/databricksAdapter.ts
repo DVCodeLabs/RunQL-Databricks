@@ -3,6 +3,7 @@ import {
   ColumnModel,
   ConnectionProfile,
   ConnectionSecrets,
+  CopyTableOptions,
   DbAdapter,
   ForeignKeyModel,
   NonQueryResult,
@@ -226,6 +227,122 @@ export class DatabricksAdapter implements DbAdapter {
         schemas
       };
     });
+  }
+
+  // ─── Optional table-operation capabilities ────────────────────────────────
+
+  async getTableDdl(
+    profile: ConnectionProfile,
+    secrets: ConnectionSecrets,
+    schema: string | undefined,
+    table: string
+  ): Promise<string> {
+    return this.withSession(profile, secrets, async (session) => {
+      const fqn = this.buildQualifiedTableName(profile, schema, table);
+      const rows = await this.executeAndFetch(session, `SHOW CREATE TABLE ${fqn}`, 1, profile);
+      const first = rows[0] || {};
+      // Databricks returns the DDL under `createtab_stmt` (Spark-inherited) or
+      // `sqlstring` depending on the runtime version. Prefer known column names
+      // in a stable order; only fall back to a first-string scan if the schema
+      // changes shape in a future runtime.
+      const KNOWN_KEYS = ['createtab_stmt', 'sqlstring', 'ddl', 'create_statement'];
+      for (const key of KNOWN_KEYS) {
+        const value = first[key] ?? first[key.toUpperCase()];
+        if (typeof value === 'string' && value.trim()) {
+          return value;
+        }
+      }
+      for (const key of Object.keys(first)) {
+        const value = first[key];
+        if (typeof value === 'string' && value.trim()) {
+          return value;
+        }
+      }
+      throw new Error(`Databricks returned no DDL for ${fqn}.`);
+    });
+  }
+
+  async dumpTableStructure(
+    profile: ConnectionProfile,
+    secrets: ConnectionSecrets,
+    schema: string | undefined,
+    table: string
+  ): Promise<string> {
+    return this.getTableDdl(profile, secrets, schema, table);
+  }
+
+  async truncateTable(
+    profile: ConnectionProfile,
+    secrets: ConnectionSecrets,
+    schema: string | undefined,
+    table: string
+  ): Promise<void> {
+    await this.withSession(profile, secrets, async (session) => {
+      const fqn = this.buildQualifiedTableName(profile, schema, table);
+      const operation = await session.executeStatement(
+        `TRUNCATE TABLE ${fqn}`,
+        this.buildStatementOptions(profile)
+      );
+      try {
+        await operation.finished();
+      } finally {
+        await closeQuietly(operation);
+      }
+    });
+  }
+
+  async copyTable(
+    profile: ConnectionProfile,
+    secrets: ConnectionSecrets,
+    sourceSchema: string | undefined,
+    sourceTable: string,
+    options: CopyTableOptions
+  ): Promise<void> {
+    await this.withSession(profile, secrets, async (session) => {
+      const src = this.buildQualifiedTableName(profile, sourceSchema, sourceTable);
+      const dst = this.buildQualifiedTableName(
+        profile,
+        options.destSchema ?? sourceSchema,
+        options.destTable
+      );
+      // DEEP CLONE (Delta only) is metadata-copy + data files: fast and full-
+      // fidelity. For non-Delta tables it would fail — the client capability
+      // probe catches that error and surfaces it to the user, which is the
+      // correct behavior per the spec (surface adapter errors, don't mask).
+      // For structure-only, CREATE TABLE ... LIKE is a native Databricks
+      // primitive that preserves the schema without copying data.
+      const sql = options.withData
+        ? `CREATE TABLE ${dst} DEEP CLONE ${src}`
+        : `CREATE TABLE ${dst} LIKE ${src}`;
+      const operation = await session.executeStatement(sql, this.buildStatementOptions(profile));
+      try {
+        await operation.finished();
+      } finally {
+        await closeQuietly(operation);
+      }
+    });
+  }
+
+  private buildQualifiedTableName(
+    profile: ConnectionProfile,
+    schemaName: string | undefined,
+    tableName: string
+  ): string {
+    const quote = (n: string) => this.quoteIdentifier(n);
+    if (schemaName && schemaName.includes('.')) {
+      const parts = schemaName.split('.').map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 2) {
+        return parts.map(quote).concat(quote(tableName)).join('.');
+      }
+    }
+    const catalog = profile.database?.trim();
+    if (catalog && schemaName) {
+      return `${quote(catalog)}.${quote(schemaName)}.${quote(tableName)}`;
+    }
+    if (schemaName) {
+      return `${quote(schemaName)}.${quote(tableName)}`;
+    }
+    return quote(tableName);
   }
 
   private async withSession<T>(
